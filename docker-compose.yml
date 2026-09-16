@@ -1,0 +1,39 @@
+name: selfbg
+
+# `docker compose pull && docker compose up -d`  -> use the published images.
+# `docker compose up --build`                    -> build locally from source.
+# Pin a version by setting SELFBG_TAG=v0.1.0 in .env; defaults to :latest.
+
+services:
+  api:
+    image: ghcr.io/self-bg/selfbg-api:${SELFBG_TAG:-latest}
+    build:
+      context: ./backend
+      args:
+        SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+    restart: unless-stopped
+    environment:
+      SELFBG_API_KEY: ${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}
+      SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+      SELFBG_MAX_UPLOAD_MB: ${SELFBG_MAX_UPLOAD_MB:-25}
+      SELFBG_CORS_ORIGINS: ${SELFBG_CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "${API_BIND:-127.0.0.1:8000}:8000"
+    volumes:
+      - model-cache:/home/selfbg/.u2net
+
+  web:
+    image: ghcr.io/self-bg/selfbg-web:${SELFBG_TAG:-latest}
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SELFBG_API_ORIGIN: http://api:8000
+    ports:
+      - "${WEB_BIND:-127.0.0.1:3000}:3000"
+
+volumes:
+  model-cache:
