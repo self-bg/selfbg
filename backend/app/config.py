@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     data_dir: str = "/data/jobs"
     result_ttl_seconds: int = 86400
+    cleanup_interval_seconds: int = 3600
 
     @field_validator("api_key")
     @classmethod

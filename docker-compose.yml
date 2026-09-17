@@ -65,6 +65,29 @@ services:
       - model-cache:/home/selfbg/.u2net
       - job-data:/data/jobs
 
+  # Deletes old job folders from disk on a loop. Once Redis has expired
+  # a job's record, this removes the input image and result PNG so the
+  # data volume doesn't grow forever.
+  cleaner:
+    image: ghcr.io/self-bg/selfbg-api:${SELFBG_TAG:-latest}
+    build:
+      context: ./backend
+      args:
+        SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
+      SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+      SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
+      SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
+      SELFBG_CLEANUP_INTERVAL_SECONDS: ${SELFBG_CLEANUP_INTERVAL_SECONDS:-3600}
+    command: ["python", "-m", "app.cleaner"]
+    volumes:
+      - job-data:/data/jobs
+
   # Job queue backend for async processing (batches, and later video).
   # Not exposed outside the compose network — only api and worker talk to it.
   redis:
