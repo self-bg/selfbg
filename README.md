@@ -53,9 +53,11 @@ docker compose up -d --build
 
 There's a full walkthrough for Proxmox + Nginx + Cloudflare in [docs/deploy-proxmox.md](docs/deploy-proxmox.md), including the LXC creation script, sizing recommendations, and the reverse-proxy config.
 
-### Bindings default to `127.0.0.1`
+### Bindings default to `0.0.0.0`
 
-Out of the box `selfbg` only listens on localhost. Nothing is exposed to your LAN or the internet until you say so. To make it reachable on your LAN, set `API_BIND=0.0.0.0:8000` and `WEB_BIND=0.0.0.0:3000` in `.env`, then put it behind your own reverse proxy (Nginx, Caddy, Traefik, Cloudflare Tunnel — whichever you already run).
+Out of the box `selfbg` listens on every network interface of the host, so any device on your LAN can reach it once the containers are up. The API key is mandatory on every processing endpoint regardless of where the port is bound, so accidental network exposure never leaks anything — an unauthenticated request just gets a `401`.
+
+To lock the ports to the host only (e.g. because a reverse proxy sits on the same box and you don't want the raw ports on the LAN), set `API_BIND=127.0.0.1:8000` and `WEB_BIND=127.0.0.1:3000` in `.env`.
 
 ### API key (required)
 
@@ -161,7 +163,7 @@ Every phase ships as a public release rather than a big-bang launch.
 - **Frontend:** Next.js 15 App Router, React 19, Tailwind v4, TypeScript strict. Built as a standalone Node output for a small production image.
 - **Deployment:** Docker Compose. The `api` service exposes port 8000; the `web` service exposes 3000 and proxies `/api/*` to `api` internally, so from the browser's perspective everything is same-origin — CORS only matters if you hit the API directly from another host.
 - **Model cache:** Named Docker volume (`model-cache`) mounted at `~/.u2net` so model downloads survive rebuilds.
-- **Security defaults:** Bindings on `127.0.0.1`; mandatory shared API key enforced by a FastAPI dependency; upload size capped at 25 MB and enforced before decoding; only common raster types accepted.
+- **Security defaults:** Mandatory shared API key enforced by a FastAPI dependency (server refuses to start if it's unset); upload size capped at 25 MB and enforced before decoding; only common raster types accepted. Ports bind to `0.0.0.0` by default (LAN-reachable); the API key stays mandatory so exposure ≠ leak.
 
 ---
 

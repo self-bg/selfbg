@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="selfbg",
-        description="Self-hosted background removal API. A drop-in replacement for remove.bg.",
+        description="Self-hosted background removal API, alternative for remove.bg.",
         version="0.1.0",
         lifespan=lifespan,
     )
