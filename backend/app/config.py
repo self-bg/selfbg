@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     model: str = "birefnet-general"
     max_upload_mb: int = 25
     cors_origins: str = "http://localhost:3000"
+    redis_url: str = "redis://redis:6379/0"
 
     @field_validator("api_key")
     @classmethod
