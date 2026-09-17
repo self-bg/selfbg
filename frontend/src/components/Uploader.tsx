@@ -24,6 +24,7 @@ export default function Uploader() {
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingBatchId, setDownloadingBatchId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const batchesRef = useRef<Batch[]>([]);
 
@@ -164,6 +165,45 @@ export default function Uploader() {
     setBatches((prev) => prev.filter((b) => b.id !== batchId));
   };
 
+  const downloadZip = useCallback(
+    async (batchId: string) => {
+      setDownloadingBatchId(batchId);
+      setError(null);
+      try {
+        const resp = await fetch(`/api/batches/${batchId}/zip`, {
+          headers: apiKey ? { "X-API-Key": apiKey } : undefined,
+        });
+        if (!resp.ok) {
+          let detail = `Download failed with ${resp.status}`;
+          try {
+            const body = await resp.json();
+            if (body?.detail) detail = String(body.detail);
+          } catch {
+            /* not JSON */
+          }
+          setError(detail);
+          return;
+        }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `selfbg-${batchId}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // Small delay so the browser has a chance to start the download before
+        // we revoke the object URL.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : String(exc));
+      } finally {
+        setDownloadingBatchId(null);
+      }
+    },
+    [apiKey],
+  );
+
   return (
     <section className="space-y-6">
       <div
@@ -228,19 +268,36 @@ export default function Uploader() {
         const doneCount = batch.jobs.filter(
           (j) => j.status === "finished" || j.status === "failed",
         ).length;
+        const allDone = doneCount === batch.jobs.length;
+        const anyFinished = batch.jobs.some((j) => j.status === "finished");
+        const canDownloadZip = allDone && anyFinished && batch.jobs.length > 1;
+        const isDownloading = downloadingBatchId === batch.id;
+
         return (
           <div key={batch.id} className="space-y-2">
-            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-text-dim)]">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-[color:var(--color-text-dim)]">
               <span>
                 Batch of {batch.jobs.length} — {doneCount} done
               </span>
-              <button
-                type="button"
-                onClick={() => clearBatch(batch.id)}
-                className="hover:text-[color:var(--color-text)]"
-              >
-                Clear
-              </button>
+              <div className="flex items-center gap-3">
+                {canDownloadZip && (
+                  <button
+                    type="button"
+                    onClick={() => downloadZip(batch.id)}
+                    disabled={isDownloading}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-panel-2)] px-3 py-1 normal-case tracking-normal text-[color:var(--color-text)] hover:border-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isDownloading ? "Downloading…" : "Download all as zip"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => clearBatch(batch.id)}
+                  className="hover:text-[color:var(--color-text)]"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
             <div className="space-y-2">
               {batch.jobs.map((job) => (
