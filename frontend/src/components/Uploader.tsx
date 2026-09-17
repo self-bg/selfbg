@@ -2,21 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import JobCard, { type Job } from "./JobCard";
+
 const ACCEPT = "image/png,image/jpeg,image/webp,image/tiff,image/bmp";
+const ACCEPT_SET = new Set(ACCEPT.split(","));
 const MAX_MB = 25;
 const API_KEY_STORAGE = "selfbg.apiKey";
+const POLL_MS = 1000;
 
-type Status = "idle" | "loading" | "done" | "error";
+type Batch = {
+  id: string;
+  jobs: Job[];
+};
+
+type SubmittedJob = { job_id: string; filename: string };
+type CreateResponse = { batch_id: string; jobs: SubmittedJob[] };
 
 export default function Uploader() {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const batchesRef = useRef<Batch[]>([]);
+
+  useEffect(() => {
+    batchesRef.current = batches;
+  }, [batches]);
 
   useEffect(() => {
     try {
@@ -26,13 +39,6 @@ export default function Uploader() {
       /* localStorage may be blocked in private mode */
     }
   }, []);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
-    };
-  }, [previewUrl, resultUrl]);
 
   const persistKey = (value: string) => {
     setApiKey(value);
@@ -44,85 +50,119 @@ export default function Uploader() {
     }
   };
 
-  const chooseFile = useCallback((next: File | null) => {
-    setError(null);
-    setStatus("idle");
-    setResultUrl((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return null;
-    });
-    if (!next) {
-      setFile(null);
-      setPreviewUrl((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return null;
-      });
-      return;
+  const validate = (files: File[]): string | null => {
+    for (const f of files) {
+      if (!ACCEPT_SET.has(f.type)) {
+        return `Unsupported file type: ${f.name} (${f.type || "unknown"})`;
+      }
+      if (f.size > MAX_MB * 1024 * 1024) {
+        return `${f.name} is ${(f.size / 1024 / 1024).toFixed(1)} MB — max is ${MAX_MB} MB`;
+      }
     }
-    if (!ACCEPT.split(",").includes(next.type)) {
-      setError(`Unsupported file type: ${next.type || "unknown"}.`);
-      return;
-    }
-    if (next.size > MAX_MB * 1024 * 1024) {
-      setError(`File is ${(next.size / 1024 / 1024).toFixed(1)} MB — max is ${MAX_MB} MB.`);
-      return;
-    }
-    setFile(next);
-    setPreviewUrl((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(next);
-    });
-  }, []);
+    return null;
+  };
+
+  const submit = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      const validationError = validate(files);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+      setSubmitting(true);
+      setError(null);
+
+      const form = new FormData();
+      for (const f of files) form.append("files", f);
+
+      try {
+        const resp = await fetch("/api/jobs", {
+          method: "POST",
+          body: form,
+          headers: apiKey ? { "X-API-Key": apiKey } : undefined,
+        });
+        if (!resp.ok) {
+          let detail = `Request failed with ${resp.status}`;
+          try {
+            const body = await resp.json();
+            if (body?.detail) detail = String(body.detail);
+          } catch {
+            /* not JSON */
+          }
+          setError(detail);
+          return;
+        }
+        const data: CreateResponse = await resp.json();
+        const nowIso = new Date().toISOString();
+        const jobs: Job[] = data.jobs.map((j) => ({
+          id: j.job_id,
+          filename: j.filename,
+          status: "queued",
+          batch_id: data.batch_id,
+          model: "",
+          created_at: nowIso,
+          started_at: null,
+          ended_at: null,
+          error: null,
+        }));
+        setBatches((prev) => [{ id: data.batch_id, jobs }, ...prev]);
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : String(exc));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [apiKey],
+  );
+
+  // Poll every second. If nothing is pending, the tick returns immediately.
+  useEffect(() => {
+    const tick = async () => {
+      const pending = batchesRef.current.filter((b) =>
+        b.jobs.some((j) => j.status !== "finished" && j.status !== "failed"),
+      );
+      if (!pending.length) return;
+      for (const batch of pending) {
+        try {
+          const r = await fetch(`/api/batches/${batch.id}`, {
+            headers: apiKey ? { "X-API-Key": apiKey } : undefined,
+          });
+          if (!r.ok) continue;
+          const data: { batch_id: string; jobs: Job[] } = await r.json();
+          setBatches((prev) =>
+            prev.map((b) => (b.id === batch.id ? { id: batch.id, jobs: data.jobs } : b)),
+          );
+        } catch {
+          /* transient — try again next tick */
+        }
+      }
+    };
+    const id = window.setInterval(tick, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [apiKey]);
 
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       setDragOver(false);
-      const dropped = event.dataTransfer.files?.[0] ?? null;
-      chooseFile(dropped);
+      const dropped = Array.from(event.dataTransfer.files ?? []);
+      submit(dropped);
     },
-    [chooseFile],
+    [submit],
   );
 
-  const submit = useCallback(async () => {
-    if (!file) return;
-    setStatus("loading");
-    setError(null);
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      const resp = await fetch("/api/remove", {
-        method: "POST",
-        body: form,
-        headers: apiKey ? { "X-API-Key": apiKey } : undefined,
-      });
-      if (!resp.ok) {
-        let detail = `Request failed with ${resp.status}`;
-        try {
-          const body = await resp.json();
-          if (body?.detail) detail = String(body.detail);
-        } catch {
-          /* body may not be JSON */
-        }
-        setError(detail);
-        setStatus("error");
-        return;
-      }
-      const blob = await resp.blob();
-      setResultUrl((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return URL.createObjectURL(blob);
-      });
-      setStatus("done");
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
-      setStatus("error");
-    }
-  }, [file, apiKey]);
+  const onPick = useCallback(
+    (files: FileList | null) => {
+      if (!files) return;
+      submit(Array.from(files));
+    },
+    [submit],
+  );
 
-  const downloadName = file
-    ? `${file.name.replace(/\.[^.]+$/, "")}-cutout.png`
-    : "cutout.png";
+  const clearBatch = (batchId: string) => {
+    setBatches((prev) => prev.filter((b) => b.id !== batchId));
+  };
 
   return (
     <section className="space-y-6">
@@ -146,17 +186,18 @@ export default function Uploader() {
         }`}
       >
         <p className="text-lg font-medium">
-          Drop an image here, or click to choose
+          {submitting ? "Uploading…" : "Drop images here, or click to choose"}
         </p>
         <p className="mt-1 text-sm text-[color:var(--color-text-dim)]">
-          PNG, JPEG, WebP, TIFF, or BMP — up to {MAX_MB} MB
+          PNG, JPEG, WebP, TIFF, or BMP — up to {MAX_MB} MB each. Multiple files at once are fine.
         </p>
         <input
           ref={inputRef}
           type="file"
           accept={ACCEPT}
+          multiple
           className="hidden"
-          onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => onPick(e.target.files)}
         />
       </div>
 
@@ -183,69 +224,32 @@ export default function Uploader() {
         </div>
       )}
 
-      {file && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <figure className="overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-panel)]">
-            <figcaption className="border-b border-[color:var(--color-border)] px-3 py-2 text-xs uppercase tracking-wide text-[color:var(--color-text-dim)]">
-              Original
-            </figcaption>
-            {previewUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewUrl} alt="Original" className="max-h-96 w-full object-contain p-3" />
-            )}
-          </figure>
-          <figure className="checkerboard overflow-hidden rounded-xl border border-[color:var(--color-border)]">
-            <figcaption className="border-b border-[color:var(--color-border)] bg-[color:var(--color-panel)] px-3 py-2 text-xs uppercase tracking-wide text-[color:var(--color-text-dim)]">
-              Result
-            </figcaption>
-            <div className="flex min-h-[8rem] items-center justify-center p-3">
-              {status === "loading" && (
-                <span className="text-sm text-[color:var(--color-text-dim)]">
-                  Processing…
-                </span>
-              )}
-              {resultUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={resultUrl} alt="Cutout" className="max-h-96 w-full object-contain" />
-              )}
-              {status === "idle" && !resultUrl && (
-                <span className="text-sm text-[color:var(--color-text-dim)]">
-                  Press <em>Remove background</em> to run.
-                </span>
-              )}
+      {batches.map((batch) => {
+        const doneCount = batch.jobs.filter(
+          (j) => j.status === "finished" || j.status === "failed",
+        ).length;
+        return (
+          <div key={batch.id} className="space-y-2">
+            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-text-dim)]">
+              <span>
+                Batch of {batch.jobs.length} — {doneCount} done
+              </span>
+              <button
+                type="button"
+                onClick={() => clearBatch(batch.id)}
+                className="hover:text-[color:var(--color-text)]"
+              >
+                Clear
+              </button>
             </div>
-          </figure>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!file || status === "loading"}
-          className="rounded-lg bg-[color:var(--color-accent)] px-5 py-2 font-medium text-black transition-colors hover:bg-[color:var(--color-accent-hi)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {status === "loading" ? "Processing…" : "Remove background"}
-        </button>
-        {resultUrl && (
-          <a
-            href={resultUrl}
-            download={downloadName}
-            className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-panel)] px-5 py-2 text-sm hover:border-[color:var(--color-accent)]"
-          >
-            Download PNG
-          </a>
-        )}
-        {file && (
-          <button
-            type="button"
-            onClick={() => chooseFile(null)}
-            className="text-sm text-[color:var(--color-text-dim)] hover:text-[color:var(--color-text)]"
-          >
-            Reset
-          </button>
-        )}
-      </div>
+            <div className="space-y-2">
+              {batch.jobs.map((job) => (
+                <JobCard key={job.id} job={job} apiKey={apiKey} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
