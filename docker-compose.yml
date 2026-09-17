@@ -35,6 +35,28 @@ services:
     ports:
       - "${WEB_BIND:-0.0.0.0:3000}:3000"
 
+  # Runs the same image as `api` but with `python -m app.worker` as the
+  # entrypoint, so it warms the model and then blocks on the RQ queue.
+  # Scale horizontally with `docker compose up -d --scale worker=N` once
+  # the box has the RAM for it (each worker loads its own model copy).
+  worker:
+    image: ghcr.io/self-bg/selfbg-api:${SELFBG_TAG:-latest}
+    build:
+      context: ./backend
+      args:
+        SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
+      SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
+      SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - model-cache:/home/selfbg/.u2net
+
   # Job queue backend for async processing (batches, and later video).
   # Not exposed outside the compose network — only api and worker talk to it.
   redis:
