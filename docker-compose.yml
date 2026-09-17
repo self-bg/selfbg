@@ -35,5 +35,20 @@ services:
     ports:
       - "${WEB_BIND:-0.0.0.0:3000}:3000"
 
+  # Job queue backend for async processing (batches, and later video).
+  # Not exposed outside the compose network — only api and worker talk to it.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   model-cache:
+  redis-data:
