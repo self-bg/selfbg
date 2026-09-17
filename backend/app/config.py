@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
     cors_origins: str = "http://localhost:3000"
     redis_url: str = "redis://redis:6379/0"
+    data_dir: str = "/data/jobs"
+    result_ttl_seconds: int = 86400
 
     @field_validator("api_key")
     @classmethod

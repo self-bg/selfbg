@@ -23,8 +23,8 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 
-RUN mkdir -p "$U2NET_HOME" \
- && chown -R selfbg:selfbg /app "$U2NET_HOME"
+RUN mkdir -p "$U2NET_HOME" /data/jobs \
+ && chown -R selfbg:selfbg /app "$U2NET_HOME" /data
 
 USER selfbg
 
