@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .matting import warmup
+from .routes.jobs import router as jobs_router
 from .routes.remove import router as remove_router
 from .routes.v1_compat import router as v1_router
 
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
 
     app.include_router(remove_router)
     app.include_router(v1_router)
+    app.include_router(jobs_router)
     return app
 
 

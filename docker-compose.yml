@@ -12,15 +12,21 @@ services:
       args:
         SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
       SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_MAX_UPLOAD_MB: ${SELFBG_MAX_UPLOAD_MB:-25}
       SELFBG_CORS_ORIGINS: ${SELFBG_CORS_ORIGINS:-http://localhost:3000}
+      SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
+      SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
     ports:
       - "${API_BIND:-0.0.0.0:8000}:8000"
     volumes:
       - model-cache:/home/selfbg/.u2net
+      - job-data:/data/jobs
 
   web:
     image: ghcr.io/self-bg/selfbg-web:${SELFBG_TAG:-latest}
@@ -53,9 +59,11 @@ services:
       SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
+      SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
     command: ["python", "-m", "app.worker"]
     volumes:
       - model-cache:/home/selfbg/.u2net
+      - job-data:/data/jobs
 
   # Job queue backend for async processing (batches, and later video).
   # Not exposed outside the compose network — only api and worker talk to it.
@@ -74,3 +82,4 @@ services:
 volumes:
   model-cache:
   redis-data:
+  job-data:
