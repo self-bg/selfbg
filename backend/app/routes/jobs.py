@@ -1,18 +1,23 @@
 """The async job endpoints — submit an image, get a job ID back, poll for
 status, download the result when it's done.
 
-    POST /jobs                 submit one or more images, get back job IDs
-    GET  /jobs/{job_id}        current status of a job
-    GET  /jobs/{job_id}/result the finished PNG (once the job is done)
-    GET  /batches/{batch_id}   status of every job submitted together
+    POST /jobs                    submit one or more images, get back job IDs
+    GET  /jobs/{job_id}           current status of a job
+    GET  /jobs/{job_id}/result    the finished PNG (once the job is done)
+    GET  /batches/{batch_id}      status of every job submitted together
+    GET  /batches/{batch_id}/zip  every finished cutout in the batch as one zip
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from stat import S_IFREG
+from typing import Iterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from stream_zip import NO_COMPRESSION_64, stream_zip
 
 from ..auth import require_api_key
 from ..jobs import (
@@ -27,6 +32,8 @@ from ..jobs import (
 from ..upload import read_upload
 
 router = APIRouter(tags=["jobs"])
+
+ZIP_CHUNK_BYTES = 65536
 
 
 @router.post(
@@ -96,3 +103,60 @@ async def read_batch(batch_id: str) -> dict:
     if jobs is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Batch not found.")
     return {"batch_id": batch_id, "jobs": [j.to_dict() for j in jobs]}
+
+
+@router.get(
+    "/batches/{batch_id}/zip",
+    dependencies=[Depends(require_api_key)],
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def download_batch_zip(batch_id: str) -> StreamingResponse:
+    jobs = get_batch(batch_id)
+    if jobs is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Batch not found.")
+
+    pending = [j for j in jobs if j.status not in ("finished", "failed")]
+    if pending:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"{len(pending)} of {len(jobs)} jobs are still processing.",
+        )
+
+    finished = sorted(
+        (j for j in jobs if j.status == "finished"),
+        key=lambda j: j.created_at,
+    )
+    if not finished:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No finished results in this batch.",
+        )
+
+    modified = datetime.now(timezone.utc)
+    perms = S_IFREG | 0o600
+    width = len(str(len(finished)))
+
+    def _read_chunks(path: Path) -> Iterator[bytes]:
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(ZIP_CHUNK_BYTES)
+                if not chunk:
+                    return
+                yield chunk
+
+    def _entries():
+        for index, job in enumerate(finished, start=1):
+            path = result_path(job.id)
+            if not path.exists():
+                continue
+            base = Path(job.filename).stem or job.id
+            name = f"{index:0{width}d}-{base}-cutout.png"
+            yield (name, modified, perms, NO_COMPRESSION_64, _read_chunks(path))
+
+    return StreamingResponse(
+        stream_zip(_entries()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="selfbg-{batch_id}.zip"',
+        },
+    )

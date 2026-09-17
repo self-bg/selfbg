@@ -7,3 +7,4 @@ Pillow>=10.4
 httpx>=0.27
 redis>=5.0,<7
 rq>=1.16,<3
+stream-zip>=0.0.83

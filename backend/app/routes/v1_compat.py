@@ -1,3 +1,7 @@
+"""Offers same URL and request format as remove.bg, so people migrating
+from remove.bg don't have to change any of their code.
+"""
+
 from __future__ import annotations
 
 import base64
