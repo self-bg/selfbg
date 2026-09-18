@@ -1,4 +1,5 @@
-"""The sync /remove endpoint, send an image and it removes the background from it."""
+"""The sync /remove endpoint — send one image and wait for the cutout in
+the same request. Videos aren't supported here; use POST /jobs for those."""
 
 from __future__ import annotations
 
@@ -21,7 +22,12 @@ async def remove_endpoint(
     file: UploadFile = File(..., description="Image to process."),
     model: str | None = Form(default=None, description="Override rembg model name."),
 ) -> Response:
-    body = await read_upload(file)
+    body, kind = await read_upload(file)
+    if kind != "image":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="The /remove endpoint only accepts images. Use POST /jobs for videos.",
+        )
     try:
         png = remove_background(body, model_name=model)
     except Exception as exc:

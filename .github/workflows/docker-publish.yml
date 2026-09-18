@@ -21,10 +21,16 @@ jobs:
         include:
           - service: api
             context: ./backend
+            dockerfile: Dockerfile
             image: ghcr.io/self-bg/selfbg-api
           - service: web
             context: ./frontend
+            dockerfile: Dockerfile
             image: ghcr.io/self-bg/selfbg-web
+          - service: video
+            context: ./backend
+            dockerfile: Dockerfile.video
+            image: ghcr.io/self-bg/selfbg-video
 
     steps:
       - name: Checkout
@@ -56,6 +62,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

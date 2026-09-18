@@ -19,6 +19,7 @@ services:
       SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_MAX_UPLOAD_MB: ${SELFBG_MAX_UPLOAD_MB:-25}
+      SELFBG_MAX_VIDEO_UPLOAD_MB: ${SELFBG_MAX_VIDEO_UPLOAD_MB:-200}
       SELFBG_CORS_ORIGINS: ${SELFBG_CORS_ORIGINS:-http://localhost:3000}
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
@@ -63,6 +64,28 @@ services:
     command: ["python", "-m", "app.worker"]
     volumes:
       - model-cache:/home/selfbg/.u2net
+      - job-data:/data/jobs
+
+  # Video processing worker (CPU). Uses Robust Video Matting via ONNX
+  # Runtime and FFmpeg. Watches the "video" queue in Redis, separate from
+  # the image queue so a long video job doesn't block image work.
+  video-worker:
+    image: ghcr.io/self-bg/selfbg-video:${SELFBG_TAG:-latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.video
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
+      SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
+      SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
+      SELFBG_MAX_VIDEO_UPLOAD_MB: ${SELFBG_MAX_VIDEO_UPLOAD_MB:-200}
+      SELFBG_MAX_VIDEO_DURATION_SECONDS: ${SELFBG_MAX_VIDEO_DURATION_SECONDS:-30}
+      SELFBG_MAX_VIDEO_SHORT_SIDE_PX: ${SELFBG_MAX_VIDEO_SHORT_SIDE_PX:-480}
+    volumes:
       - job-data:/data/jobs
 
   # Deletes old job folders from disk on a loop. Once Redis has expired

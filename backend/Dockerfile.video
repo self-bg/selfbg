@@ -1,0 +1,32 @@
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    SELFBG_RVM_MODEL_PATH=/models/rvm_mobilenetv3_fp32.onnx
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      curl \
+      ffmpeg \
+      libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash --uid 1000 selfbg
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY app ./app
+
+# Bake the RVM model into the image so the container doesn't need internet
+# on first run. Mobilenetv3 variant is small (~14 MB) and CPU-friendly.
+RUN mkdir -p /models /data/jobs \
+ && curl -fL "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx" -o "$SELFBG_RVM_MODEL_PATH" \
+ && chown -R selfbg:selfbg /app /models /data
+
+USER selfbg
+
+CMD ["python", "-m", "app.video_worker"]

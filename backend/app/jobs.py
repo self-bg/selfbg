@@ -2,8 +2,10 @@
 
 RQ handles the queued/started/finished/failed status. We attach our own
 fields to each job (filename, batch ID, which model was used, when it was
-created). When several files are uploaded together, their job IDs are
-grouped into a batch so the UI can poll them all at once.
+created, whether it's an image or video job). Image jobs go on the
+`default` queue; video jobs go on the `video` queue and are picked up by
+the video worker. When several files are uploaded together, their job
+IDs are grouped into a batch so the UI can poll them all at once.
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ from rq.job import Job as RqJob
 
 from .config import get_settings
 
-QUEUE_NAME = "default"
+IMAGE_QUEUE = "default"
+VIDEO_QUEUE = "video"
 BATCH_KEY = "selfbg:batch:{batch_id}"
 
 
@@ -30,8 +33,8 @@ def _connection() -> Redis:
     return Redis.from_url(get_settings().redis_url)
 
 
-def _queue() -> Queue:
-    return Queue(QUEUE_NAME, connection=_connection())
+def _queue(name: str) -> Queue:
+    return Queue(name, connection=_connection())
 
 
 def new_id() -> str:
@@ -46,13 +49,15 @@ def input_path(job_id: str, suffix: str) -> Path:
     return job_dir(job_id) / f"input{suffix}"
 
 
-def result_path(job_id: str) -> Path:
-    return job_dir(job_id) / "result.png"
+def result_path(job_id: str, job_type: str = "image") -> Path:
+    ext = "webm" if job_type == "video" else "png"
+    return job_dir(job_id) / f"result.{ext}"
 
 
 @dataclass
 class JobView:
     id: str
+    job_type: str
     status: str
     filename: str
     batch_id: str | None
@@ -70,20 +75,35 @@ def enqueue_job(
     job_id: str,
     filename: str,
     batch_id: str,
+    job_type: str = "image",
     model_name: str | None = None,
 ) -> None:
-    from .tasks import process_image  # local import breaks the tasks<->jobs cycle
+    # Local imports avoid circular dependencies with .tasks
+    from .tasks import process_image, process_video
 
     settings = get_settings()
-    _queue().enqueue_call(
-        func=process_image,
+
+    if job_type == "video":
+        func = process_video
+        queue_name = VIDEO_QUEUE
+        model_label = "rvm_mobilenetv3"
+        kwargs: dict = {}
+    else:
+        func = process_image
+        queue_name = IMAGE_QUEUE
+        model_label = model_name or settings.model
+        kwargs = {"model_name": model_name}
+
+    _queue(queue_name).enqueue_call(
+        func=func,
         args=(job_id,),
-        kwargs={"model_name": model_name},
+        kwargs=kwargs,
         job_id=job_id,
         meta={
+            "job_type": job_type,
             "filename": filename,
             "batch_id": batch_id,
-            "model": model_name or settings.model,
+            "model": model_label,
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
         result_ttl=settings.result_ttl_seconds,
@@ -105,6 +125,7 @@ def get_job(job_id: str) -> JobView | None:
     meta = j.meta or {}
     return JobView(
         id=j.id,
+        job_type=meta.get("job_type", "image"),
         status=j.get_status(),
         filename=meta.get("filename", ""),
         batch_id=meta.get("batch_id"),
