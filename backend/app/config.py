@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     result_ttl_seconds: int = 86400
     cleanup_interval_seconds: int = 3600
 
+    # Video (Phase 4). CPU worker only for now; GPU support is a future phase.
+    max_video_upload_mb: int = 200
+    max_video_duration_seconds: int = 30
+    max_video_short_side_px: int = 480
+    rvm_model_path: str = "/models/rvm_mobilenetv3_fp32.onnx"
+
     @field_validator("api_key")
     @classmethod
     def _api_key_must_be_set(cls, value: str) -> str:
@@ -29,6 +35,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def max_video_upload_bytes(self) -> int:
+        return self.max_video_upload_mb * 1024 * 1024
 
     @property
     def cors_origin_list(self) -> list[str]:
