@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import JobCard, { type Job } from "./JobCard";
 
-const ACCEPT = "image/png,image/jpeg,image/webp,image/tiff,image/bmp";
+const ACCEPT =
+  "image/png,image/jpeg,image/webp,image/tiff,image/bmp," +
+  "video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo";
 const ACCEPT_SET = new Set(ACCEPT.split(","));
-const MAX_MB = 25;
+const IMAGE_MAX_MB = 25;
+const VIDEO_MAX_MB = 200;
 const API_KEY_STORAGE = "selfbg.apiKey";
 const POLL_MS = 1000;
 
@@ -15,7 +18,7 @@ type Batch = {
   jobs: Job[];
 };
 
-type SubmittedJob = { job_id: string; filename: string };
+type SubmittedJob = { job_id: string; filename: string; type?: string };
 type CreateResponse = { batch_id: string; jobs: SubmittedJob[] };
 
 export default function Uploader() {
@@ -56,8 +59,10 @@ export default function Uploader() {
       if (!ACCEPT_SET.has(f.type)) {
         return `Unsupported file type: ${f.name} (${f.type || "unknown"})`;
       }
-      if (f.size > MAX_MB * 1024 * 1024) {
-        return `${f.name} is ${(f.size / 1024 / 1024).toFixed(1)} MB — max is ${MAX_MB} MB`;
+      const isVideo = f.type.startsWith("video/");
+      const maxMb = isVideo ? VIDEO_MAX_MB : IMAGE_MAX_MB;
+      if (f.size > maxMb * 1024 * 1024) {
+        return `${f.name} is ${(f.size / 1024 / 1024).toFixed(1)} MB — max is ${maxMb} MB`;
       }
     }
     return null;
@@ -98,6 +103,7 @@ export default function Uploader() {
         const nowIso = new Date().toISOString();
         const jobs: Job[] = data.jobs.map((j) => ({
           id: j.job_id,
+          job_type: j.type ?? "image",
           filename: j.filename,
           status: "queued",
           batch_id: data.batch_id,
@@ -229,7 +235,8 @@ export default function Uploader() {
           {submitting ? "Uploading…" : "Drop images here, or click to choose"}
         </p>
         <p className="mt-1 text-sm text-[color:var(--color-text-dim)]">
-          PNG, JPEG, WebP, TIFF, or BMP — up to {MAX_MB} MB each. Multiple files at once are fine.
+          Images (PNG, JPEG, WebP, TIFF, BMP) up to {IMAGE_MAX_MB} MB, or videos
+          (MP4, MOV, WebM, MKV, AVI) up to {VIDEO_MAX_MB} MB. Drop several at once if you like.
         </p>
         <input
           ref={inputRef}
