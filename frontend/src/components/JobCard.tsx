@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 export type Job = {
   id: string;
+  job_type: string;
   filename: string;
   status: string;
   batch_id: string | null;
@@ -66,9 +67,11 @@ export default function JobCard({ job, apiKey }: Props) {
     };
   }, [job.status, job.id, apiKey]);
 
+  const isVideo = job.job_type === "video";
+  const ext = isVideo ? "webm" : "png";
   const downloadName = job.filename
-    ? `${job.filename.replace(/\.[^.]+$/, "")}-cutout.png`
-    : `${job.id}-cutout.png`;
+    ? `${job.filename.replace(/\.[^.]+$/, "")}-cutout.${ext}`
+    : `${job.id}-cutout.${ext}`;
 
   const label = STATUS_LABEL[job.status] ?? job.status;
   const isFailed = job.status === "failed";
@@ -78,8 +81,19 @@ export default function JobCard({ job, apiKey }: Props) {
     <div className="flex items-center gap-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-panel)] p-3">
       <div className="checkerboard flex h-20 w-20 flex-none items-center justify-center overflow-hidden rounded-lg border border-[color:var(--color-border)]">
         {resultUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={resultUrl} alt="" className="h-full w-full object-contain" />
+          isVideo ? (
+            <video
+              src={resultUrl}
+              muted
+              loop
+              autoPlay
+              playsInline
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={resultUrl} alt="" className="h-full w-full object-contain" />
+          )
         ) : isProcessing ? (
           <span className="text-xs text-[color:var(--color-text-dim)]">…</span>
         ) : isFailed ? (
