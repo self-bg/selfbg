@@ -6,14 +6,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // Videos can be well over the default 10 MB. Match the backend's video
   // upload cap so a big video isn't cut off at the proxy.
-  experimental: {
-    middlewareClientMaxBodySize: "250mb",
-  },
+  middlewareClientMaxBodySize: "250mb",
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${apiTarget}/:path*` },
     ];
   },
 };
+
 
 export default nextConfig;
