@@ -16,7 +16,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_MAX_UPLOAD_MB: ${SELFBG_MAX_UPLOAD_MB:-25}
       SELFBG_MAX_VIDEO_UPLOAD_MB: ${SELFBG_MAX_VIDEO_UPLOAD_MB:-200}
@@ -57,7 +56,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
@@ -79,7 +77,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
       SELFBG_MAX_VIDEO_UPLOAD_MB: ${SELFBG_MAX_VIDEO_UPLOAD_MB:-200}
@@ -102,7 +99,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      SELFBG_API_KEY: "${SELFBG_API_KEY:?SELFBG_API_KEY is required — generate one with: openssl rand -hex 32}"
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}

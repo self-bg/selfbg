@@ -3,10 +3,9 @@ the same request. Videos aren't supported here; use POST /jobs for those."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
-from ..auth import require_api_key
 from ..matting import remove_background
 from ..upload import read_upload
 
@@ -16,7 +15,6 @@ router = APIRouter(tags=["remove"])
 @router.post(
     "/remove",
     responses={200: {"content": {"image/png": {}}}},
-    dependencies=[Depends(require_api_key)],
 )
 async def remove_endpoint(
     file: UploadFile = File(..., description="Image to process."),
