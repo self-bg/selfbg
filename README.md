@@ -4,6 +4,8 @@ Self-hosted background removal for images and video. Made because [remove.bg is 
 
 Drop images or a short video into the web UI (or hit the API from a script) and get transparent PNGs or WebM back. Everything runs on your own server, no credits, no upload limits and no sending images/videos to a server you don't own.
 
+![selfbg processing a batch of images](docs/media/demo-batch.gif)
+
 ## What it does
 
 - **Single images** — sync endpoint, wait a few seconds, get a transparent PNG.
