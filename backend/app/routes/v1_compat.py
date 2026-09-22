@@ -8,10 +8,9 @@ import base64
 import binascii
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
-from ..auth import require_api_key
 from ..config import get_settings
 from ..matting import remove_background
 
@@ -40,7 +39,6 @@ async def _fetch_url(url: str) -> bytes:
 @router.post(
     "/image-without-background",
     responses={200: {"content": {"image/png": {}}}},
-    dependencies=[Depends(require_api_key)],
 )
 async def image_without_background(
     image_file: UploadFile | None = File(default=None),

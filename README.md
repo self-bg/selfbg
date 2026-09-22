@@ -26,9 +26,6 @@ mkdir selfbg && cd selfbg
 curl -O https://raw.githubusercontent.com/self-bg/selfbg/main/docker-compose.yml
 curl -o .env https://raw.githubusercontent.com/self-bg/selfbg/main/.env.example
 
-# Make an API key and put it in .env under SELFBG_API_KEY
-openssl rand -hex 32
-
 # Pull and start
 docker compose pull
 docker compose up -d
@@ -52,7 +49,6 @@ If you'd rather build the images yourself (contributing, or you just don't want 
 git clone https://github.com/self-bg/selfbg
 cd selfbg
 cp .env.example .env
-# set SELFBG_API_KEY in .env
 docker compose up -d --build
 ```
 
@@ -62,19 +58,11 @@ There's a full walkthrough for a Proxmox LXC behind Nginx with Cloudflare in [do
 
 ### The ports listen on `0.0.0.0` by default
 
-That means any device on your LAN can reach it once the containers are up. That's fine because the API key is mandatory on every processing endpoint — an unauthenticated request just gets a `401` back, no matter where the port is exposed.
+That means any device on your LAN can reach it once the containers are up. If you'd rather keep the ports on the host only (say, because a reverse proxy sits on the same box), set `API_BIND=127.0.0.1:8000` and `WEB_BIND=127.0.0.1:3000` in your `.env`.
 
-If you'd rather keep the ports on the host only (say, because you're putting a reverse proxy on the same box), set `API_BIND=127.0.0.1:8000` and `WEB_BIND=127.0.0.1:3000` in your `.env`.
+### There's no built-in auth
 
-### The API key is required
-
-`selfbg` refuses to start without one. It has to be at least 16 characters:
-
-```
-SELFBG_API_KEY=<paste the openssl output here>
-```
-
-Then every processing endpoint expects that same value in an `X-API-Key` header. The web UI has a field for it and stores it in your browser's `localStorage`, so you're not typing it every time.
+selfbg trusts whatever's between the caller and the API. On a home LAN that's fine — anyone who can reach your homelab is already inside your trust boundary. If you expose it beyond that (Cloudflare Tunnel, port-forward, a public reverse proxy), put your own auth layer in front — basic auth on Nginx, Authelia, Tailscale ACLs, whatever you already use for the rest of your services.
 
 ---
 
@@ -86,7 +74,6 @@ Three ways to submit work, depending on what you're doing.
 
 ```bash
 curl -X POST http://localhost:8000/remove \
-  -H "X-API-Key: $SELFBG_API_KEY" \
   -F "file=@subject.jpg" \
   -F "model=birefnet-portrait" \
   -o cutout.png
@@ -100,7 +87,6 @@ Videos aren't accepted here — you'll get a "use /jobs instead" message.
 
 ```bash
 curl -X POST http://localhost:8000/v1.0/image-without-background \
-  -H "X-API-Key: $SELFBG_API_KEY" \
   -F "image_file=@subject.jpg" \
   -o cutout.png
 ```
@@ -114,25 +100,20 @@ Submit one or many files, get a batch ID, poll each job until it's done, then do
 ```bash
 # submit
 curl -X POST http://localhost:8000/jobs \
-  -H "X-API-Key: $SELFBG_API_KEY" \
   -F "files=@photo1.jpg" \
   -F "files=@photo2.jpg" \
   -F "files=@clip.mp4"
 # → { "batch_id": "abc123", "jobs": [ ... ] }
 
 # check on a job
-curl http://localhost:8000/jobs/<job_id> -H "X-API-Key: $SELFBG_API_KEY"
+curl http://localhost:8000/jobs/<job_id>
 # → { "status": "queued" | "started" | "finished" | "failed", ... }
 
 # download when it's ready
-curl http://localhost:8000/jobs/<job_id>/result \
-  -H "X-API-Key: $SELFBG_API_KEY" \
-  -o result.png     # or result.webm for videos
+curl http://localhost:8000/jobs/<job_id>/result -o result.png   # or result.webm for videos
 
 # or grab every finished image in the batch as one zip
-curl http://localhost:8000/batches/<batch_id>/zip \
-  -H "X-API-Key: $SELFBG_API_KEY" \
-  -o batch.zip
+curl http://localhost:8000/batches/<batch_id>/zip -o batch.zip
 ```
 
 Image and video jobs run on separate internal queues so a long video doesn't hold up the image work.
@@ -229,7 +210,7 @@ Six services:
 - **Frontend:** Next.js 15 App Router, React 19, Tailwind v4, TypeScript strict. Standalone Node output for a small production image.
 - **Deployment:** Docker Compose. `web` proxies `/api/*` to `api` internally, so from the browser's point of view everything is same-origin.
 - **Persistence:** Named volumes for the model cache, Redis data, and job files. Job files auto-expire after `SELFBG_RESULT_TTL_SECONDS` (24 h default).
-- **Security:** API key is mandatory (server won't start without one). Uploads capped at 25 MB for images / 200 MB for videos, and the size check happens before decoding. Only common raster and video types get through the door. Ports bind to `0.0.0.0` by default — the key stays mandatory, so exposure ≠ leak.
+- **Security:** No built-in auth — trusts the operator's network boundary. Uploads capped at 25 MB for images / 200 MB for videos, and the size check happens before decoding. Only common raster and video types get through the door. Ports bind to `0.0.0.0` by default; put your own auth (reverse-proxy basic auth, Authelia, Tailscale, etc.) in front if you expose it beyond your LAN.
 
 ---
 
@@ -242,7 +223,6 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate    # on Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-export SELFBG_API_KEY=$(openssl rand -hex 32)
 uvicorn app.main:app --reload
 ```
 

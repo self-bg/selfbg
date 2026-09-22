@@ -45,17 +45,15 @@ curl -O https://raw.githubusercontent.com/self-bg/selfbg/main/docker-compose.yml
 curl -o .env https://raw.githubusercontent.com/self-bg/selfbg/main/.env.example
 ```
 
-Generate an API key and open `.env` in an editor:
+Open `.env` in an editor:
 
 ```bash
-openssl rand -hex 32
 nano .env
 ```
 
 In `.env`, set at minimum:
 
 ```
-SELFBG_API_KEY=<the value openssl printed>
 API_BIND=0.0.0.0:8000     # accept connections from your LAN so Nginx can reach it
 WEB_BIND=0.0.0.0:3000
 ```
@@ -84,7 +82,6 @@ Test the round-trip with a real image:
 
 ```bash
 curl -X POST http://<lxc-ip>:8000/remove \
-  -H "X-API-Key: <your key>" \
   -F "file=@some-photo.jpg" \
   -o cutout.png
 open cutout.png     # macOS; xdg-open on Linux; Explorer on Windows

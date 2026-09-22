@@ -28,6 +28,4 @@ jobs:
 
       - name: Run tests
         working-directory: backend
-        env:
-          SELFBG_API_KEY: test-api-key-0123456789abcdef
         run: pytest -v

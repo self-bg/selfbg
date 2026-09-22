@@ -17,7 +17,6 @@ export type Job = {
 
 type Props = {
   job: Job;
-  apiKey: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -27,12 +26,11 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Failed",
 };
 
-export default function JobCard({ job, apiKey }: Props) {
+export default function JobCard({ job }: Props) {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
 
-  // Fetch the result PNG as a blob once the job finishes. Using a blob URL
-  // (not the API URL directly) lets us send the X-API-Key header on the
-  // request instead of trying to sneak it into an <img src>.
+  // Fetch the result as a blob once the job finishes so we can control the
+  // URL lifecycle and swap the preview in cleanly.
   useEffect(() => {
     if (job.status !== "finished") {
       setResultUrl((old) => {
@@ -45,9 +43,7 @@ export default function JobCard({ job, apiKey }: Props) {
     let cancelled = false;
     let localUrl: string | null = null;
 
-    fetch(`/api/jobs/${job.id}/result`, {
-      headers: apiKey ? { "X-API-Key": apiKey } : undefined,
-    })
+    fetch(`/api/jobs/${job.id}/result`)
       .then((r) => {
         if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
         return r.blob();
@@ -65,7 +61,7 @@ export default function JobCard({ job, apiKey }: Props) {
       cancelled = true;
       if (localUrl) URL.revokeObjectURL(localUrl);
     };
-  }, [job.status, job.id, apiKey]);
+  }, [job.status, job.id]);
 
   const isVideo = job.job_type === "video";
   const ext = isVideo ? "webm" : "png";

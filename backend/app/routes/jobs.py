@@ -17,11 +17,10 @@ from pathlib import Path
 from stat import S_IFREG
 from typing import Iterator
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from stream_zip import NO_COMPRESSION_64, stream_zip
 
-from ..auth import require_api_key
 from ..job_store import (
     enqueue_job,
     get_batch,
@@ -50,7 +49,6 @@ RESULT_EXTENSION = {
 @router.post(
     "/jobs",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_api_key)],
 )
 async def create_jobs(
     files: list[UploadFile] = File(..., description="One or more images or videos."),
@@ -78,7 +76,7 @@ async def create_jobs(
     return {"batch_id": batch_id, "jobs": submitted}
 
 
-@router.get("/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+@router.get("/jobs/{job_id}")
 async def read_job(job_id: str) -> dict:
     j = get_job(job_id)
     if j is None:
@@ -88,7 +86,6 @@ async def read_job(job_id: str) -> dict:
 
 @router.get(
     "/jobs/{job_id}/result",
-    dependencies=[Depends(require_api_key)],
     responses={
         200: {"content": {"image/png": {}, "video/webm": {}}},
     },
@@ -115,7 +112,7 @@ async def read_job_result(job_id: str) -> FileResponse:
     return FileResponse(path, media_type=media_type, filename=f"{stem}-cutout.{ext}")
 
 
-@router.get("/batches/{batch_id}", dependencies=[Depends(require_api_key)])
+@router.get("/batches/{batch_id}")
 async def read_batch(batch_id: str) -> dict:
     jobs = get_batch(batch_id)
     if jobs is None:
@@ -125,7 +122,6 @@ async def read_batch(batch_id: str) -> dict:
 
 @router.get(
     "/batches/{batch_id}/zip",
-    dependencies=[Depends(require_api_key)],
     responses={200: {"content": {"application/zip": {}}}},
 )
 async def download_batch_zip(batch_id: str) -> StreamingResponse:
