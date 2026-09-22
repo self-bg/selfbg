@@ -1,45 +1,50 @@
 # selfbg
 
-Self-hosted background removal. A drop-in replacement for [remove.bg](https://www.remove.bg), which is [shutting down as a standalone service on December 1, 2026](https://www.remove.bg).
+Self-hosted background removal for images and video. Made because [remove.bg is shutting down on December 1, 2026](https://www.remove.bg).
 
-Upload an image, get a transparent PNG back. Runs on your own hardware, keeps your data on your own network. No credits, no rate limits you didn't set yourself, no third party in the loop.
+Drop images or a short video into the web UI (or hit the API from a script) and get transparent PNGs or WebM back. Everything runs on your own server, no credits, no upload limits and no sending images/videos to a server you don't own.
 
-> **Status:** v0.1 (Phase 1). Single-image sync API + web UI. Batch, video, and Immich integration on the roadmap below.
+## What it does
+
+- **Single images** — sync endpoint, wait a few seconds, get a transparent PNG.
+- **Batches** — throw 30 photos in at once. They queue up, the UI shows each one's progress live, and you can download them individually or grab the whole batch as a zip.
+- **Videos** — MP4 / MOV / WebM / MKV / AVI go in, WebM with a real alpha channel comes out. Plays with transparency in Chrome or Firefox directly. Uses [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting) so edges stay stable — no per-frame flickering.
+- **remove.bg-compatible API** — if you already have scripts pointing at `api.remove.bg`, swap the base URL and they'll keep working.
 
 ---
 
 ## Quickstart
 
-You don't need to clone the repo — the images are published on GitHub Container Registry.
+You don't need to clone the repo. The images are on GitHub Container Registry.
 
 ```bash
 mkdir selfbg && cd selfbg
 
-# Pull the compose file and env template
+# Grab the compose file and env template
 curl -O https://raw.githubusercontent.com/self-bg/selfbg/main/docker-compose.yml
 curl -o .env https://raw.githubusercontent.com/self-bg/selfbg/main/.env.example
 
-# Generate an API key and paste it into .env under SELFBG_API_KEY
+# Make an API key and put it in .env under SELFBG_API_KEY
 openssl rand -hex 32
 
-# Pull the images and start
+# Pull and start
 docker compose pull
 docker compose up -d
 ```
 
-Open http://localhost:3000. The API is at http://localhost:8000; auto-generated OpenAPI docs at http://localhost:8000/docs.
+Open it in a browser: **http://\<host\>:3000**, where `<host>` is `localhost` if you're on the same machine or the host's IP / hostname from any other device on your LAN. The API sits on port `8000` at the same host, and there's auto-generated API docs at `/docs`.
 
-To upgrade later:
+Upgrading later is the same two commands:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-Pin a version by setting `SELFBG_TAG=v0.1.0` in `.env` so an upstream regression can't break your instance on the next pull.
+If you want to pin a version so an upstream change can't surprise you, set `SELFBG_TAG=v0.3.0` in `.env`.
 
-### Building from source instead
+### Building from source
 
-If you'd rather build the images locally (contributing, or you don't want to pull from a public registry):
+If you'd rather build the images yourself (contributing, or you just don't want to pull from a public registry):
 
 ```bash
 git clone https://github.com/self-bg/selfbg
@@ -49,48 +54,33 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-### Deploying on Proxmox
+### Running it on Proxmox
 
-There's a full walkthrough for Proxmox + Nginx + Cloudflare in [docs/deploy-proxmox.md](docs/deploy-proxmox.md), including the LXC creation script, sizing recommendations, and the reverse-proxy config.
+There's a full walkthrough for a Proxmox LXC behind Nginx with Cloudflare in [docs/deploy-proxmox.md](docs/deploy-proxmox.md) — LXC creation, sizing, the reverse-proxy config, all of it.
 
-### Bindings default to `0.0.0.0`
+### The ports listen on `0.0.0.0` by default
 
-Out of the box `selfbg` listens on every network interface of the host, so any device on your LAN can reach it once the containers are up. The API key is mandatory on every processing endpoint regardless of where the port is bound, so accidental network exposure never leaks anything — an unauthenticated request just gets a `401`.
+That means any device on your LAN can reach it once the containers are up. That's fine because the API key is mandatory on every processing endpoint — an unauthenticated request just gets a `401` back, no matter where the port is exposed.
 
-To lock the ports to the host only (e.g. because a reverse proxy sits on the same box and you don't want the raw ports on the LAN), set `API_BIND=127.0.0.1:8000` and `WEB_BIND=127.0.0.1:3000` in `.env`.
+If you'd rather keep the ports on the host only (say, because you're putting a reverse proxy on the same box), set `API_BIND=127.0.0.1:8000` and `WEB_BIND=127.0.0.1:3000` in your `.env`.
 
-### API key (required)
+### The API key is required
 
-`selfbg` refuses to start without an API key of at least 16 characters. Generate one with `openssl rand -hex 32` and put it in `.env`:
-
-```
-SELFBG_API_KEY=<paste it here>
-```
-
-Every processing endpoint then requires the client to send:
+`selfbg` refuses to start without one. It has to be at least 16 characters:
 
 ```
-X-API-Key: <the same value>
+SELFBG_API_KEY=<paste the openssl output here>
 ```
 
-The web UI has a field for this — the key is stored in your browser's `localStorage` so you don't have to paste it on every visit.
+Then every processing endpoint expects that same value in an `X-API-Key` header. The web UI has a field for it and stores it in your browser's `localStorage`, so you're not typing it every time.
 
 ---
 
 ## Using the API
 
-### remove.bg-compatible endpoint
+Three ways to submit work, depending on what you're doing.
 
-```bash
-curl -X POST http://localhost:8000/v1.0/image-without-background \
-  -H "X-API-Key: $SELFBG_API_KEY" \
-  -F "image_file=@subject.jpg" \
-  -o cutout.png
-```
-
-Existing scripts written against remove.bg's `POST /v1.0/removebg` need only their base URL swapped. Accepts `image_file`, `image_url`, or `image_file_b64` — same contract, minus paid-tier fields we don't need.
-
-### Native endpoint
+### Sync — one image, wait for the answer
 
 ```bash
 curl -X POST http://localhost:8000/remove \
@@ -100,23 +90,74 @@ curl -X POST http://localhost:8000/remove \
   -o cutout.png
 ```
 
-The `model` field is optional; when omitted, the server default (`SELFBG_MODEL`) is used.
+Blocks until it's done (~15 seconds per image on the default model, CPU). This is the simplest thing to use for one-off images.
+
+Videos aren't accepted here — you'll get a "use /jobs instead" message.
+
+### remove.bg-compatible — for existing scripts
+
+```bash
+curl -X POST http://localhost:8000/v1.0/image-without-background \
+  -H "X-API-Key: $SELFBG_API_KEY" \
+  -F "image_file=@subject.jpg" \
+  -o cutout.png
+```
+
+Same URL and request shape as remove.bg's paid API. Anything you already had pointing at `api.remove.bg/v1.0/removebg` should work with just a base-URL swap. Accepts `image_file`, `image_url`, or `image_file_b64`.
+
+### Async — batches and videos
+
+Submit one or many files, get a batch ID, poll each job until it's done, then download.
+
+```bash
+# submit
+curl -X POST http://localhost:8000/jobs \
+  -H "X-API-Key: $SELFBG_API_KEY" \
+  -F "files=@photo1.jpg" \
+  -F "files=@photo2.jpg" \
+  -F "files=@clip.mp4"
+# → { "batch_id": "abc123", "jobs": [ ... ] }
+
+# check on a job
+curl http://localhost:8000/jobs/<job_id> -H "X-API-Key: $SELFBG_API_KEY"
+# → { "status": "queued" | "started" | "finished" | "failed", ... }
+
+# download when it's ready
+curl http://localhost:8000/jobs/<job_id>/result \
+  -H "X-API-Key: $SELFBG_API_KEY" \
+  -o result.png     # or result.webm for videos
+
+# or grab every finished image in the batch as one zip
+curl http://localhost:8000/batches/<batch_id>/zip \
+  -H "X-API-Key: $SELFBG_API_KEY" \
+  -o batch.zip
+```
+
+Image and video jobs run on separate internal queues so a long video doesn't hold up the image work.
 
 ---
 
 ## Choosing a model
 
-`selfbg` wraps [`rembg`](https://github.com/danielgatis/rembg), which supports a family of ONNX matting models. Change `SELFBG_MODEL` in `.env` and rebuild the API image, or override per-request via the `model` form field.
+### For images
+
+The image side wraps [`rembg`](https://github.com/danielgatis/rembg), which lets you pick between several ONNX matting models. Set `SELFBG_MODEL` in `.env`, or override per-request with a `model` form field.
 
 | Model | Best for | Notes |
 |---|---|---|
-| `birefnet-general` *(default)* | General subjects, products, animals | Near-SOTA open weights. Highest quality option here. |
-| `birefnet-general-lite` | Same, on smaller machines | ~half the memory, still very good. |
-| `birefnet-portrait` | People, portraits | Cleaner hair edges than general models. |
-| `u2net` | Anything, quickly | Classic. Fast on CPU. Older architecture, softer edges. |
+| `birefnet-general` *(default)* | General subjects, products, animals | Near-SOTA open weights. Highest quality here. |
+| `birefnet-general-lite` | Same, but on a smaller box | ~half the memory, still very good. |
+| `birefnet-portrait` | People, portraits | Cleaner hair edges than the general models. |
+| `u2net` | Anything, fast | Classic. Fast on CPU. Softer edges. |
 | `isnet-general-use` | Complex silhouettes | Strong on tricky outlines. |
 
 Full list: https://github.com/danielgatis/rembg#models
+
+### For videos
+
+The video worker uses [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting), a model built specifically for video. It threads a hidden state from frame to frame, which is what stops per-frame flickering. The `mobilenetv3` variant is baked into the image for CPU inference — no knob for now, this is what you get.
+
+Output is WebM VP9 with an alpha channel. It plays with transparency in Chrome and Firefox directly. Windows Media Player and most desktop players don't understand alpha video, so if you download a result and want to preview it locally, open it in VLC or a browser.
 
 ---
 
@@ -124,46 +165,69 @@ Full list: https://github.com/danielgatis/rembg#models
 
 | | `selfbg` | [`withoutbg`](https://github.com/withoutbg) | [`rembg`](https://github.com/danielgatis/rembg) | remove.bg |
 |---|---|---|---|---|
-| **Deployment** | Docker Compose, one command | Docker or SDK | Docker or SDK | Cloud only (shutting down 2026-12-01) |
-| **Web UI** | Included | Web variant | Community wrappers | Yes |
-| **remove.bg-compatible API** | Yes — `/v1.0/image-without-background` | Yes | No | Yes (going away) |
-| **Batch upload** | Roadmap (v1.1) | Single-image drag/drop only | CLI only | Yes |
-| **Video** | Roadmap (v2.0, RVM) | No | No | No |
-| **Immich integration** | Roadmap (v1.2) | No | No | No |
-| **Model quality** | Depends on chosen rembg model | High (DINOv3-based) | Depends on chosen model | High |
+| **How you run it** | Docker Compose, one command | Docker or SDK | Docker or SDK | Cloud only (going away 2026-12-01) |
+| **Web UI** | Included, batch-aware, live progress | Web variant | Community wrappers | Yes |
+| **remove.bg-compatible API** | Yes (`/v1.0/image-without-background`) | Yes | No | Yes (going away) |
+| **Batch upload + zip download** | Yes | Single-image drag/drop only | CLI only | Yes |
+| **Video** | Yes — WebM VP9 alpha | No | No | No |
 | **License** | MIT | Apache-2.0 | MIT | Commercial |
 
-`selfbg` doesn't try to beat `withoutbg` on model quality. It uses `rembg` under the hood — the same library much of the OSS ecosystem is built on — and competes on being easy to run on your own hardware, with the integrations self-hosters actually use.
+I'm not trying to beat `withoutbg` on model quality. `selfbg` uses `rembg` and RVM under the hood — the same libraries a lot of the OSS ecosystem is already built on — and picks the fight on being easy to actually run and use.
 
 ---
 
-## Roadmap
+## Current limits
 
-Every phase ships as a public release rather than a big-bang launch.
+Things it doesn't do (yet, might add them later):
 
-- [x] **v0.1 — Core.** Web UI, sync API (native + remove.bg-compatible), Docker Compose, MIT.
-- [ ] **v1.1 — Batch + queue.** Multi-image upload, Redis + RQ task queue, progress bar, "download all as zip".
-- [ ] **v1.2 — Immich plugin.** Userscript that adds a "Remove background" action to the Immich asset view; round-trips the cutout back into Immich as a new asset.
-- [ ] **v2.0 — Video.** [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting) + FFmpeg pipeline, WebM VP9 with alpha. GPU required.
-- [ ] **v2.1 — Polish.** Per-user job history, admin UI, mobile responsiveness, model hot-swapping.
+- **Videos on GPU.** CPU only. That's why the caps are conservative — 30 seconds, 480p by default. Bump those in `.env` if your box can handle it. GPU support is a future addition.
+- **Videos over 30 seconds.** Cap is configurable (`SELFBG_MAX_VIDEO_DURATION_SECONDS`), but the default keeps a single job under a couple of minutes on a modest CPU.
+- **Any output format for video other than WebM VP9 alpha.** ProRes 4444 for editors may be added if someone asks for it.
+- **User accounts, per-user history, anything multi-tenant.** Single shared API key, per-browser job history.
 
 ---
 
 ## Architecture
 
 ```
-+--------------+      /api/*      +----------------------+
-|   Next.js    |  --rewrite-->    |   FastAPI (uvicorn)  |
-|  (Tailwind)  |                  |  rembg / ONNX        |
-+--------------+                  +----------------------+
-      :3000                              :8000
+                  ┌──────────────┐   /api/*    ┌────────────────────────┐
+    browser ────▶ │    web       │ ──rewrite▶ │       api (FastAPI)    │
+                  │  (Next.js)   │             │  sync /remove          │
+                  └──────────────┘             │  async /jobs           │
+                       :3000                    │  remove.bg /v1.0/…     │
+                                                └────────────┬───────────┘
+                                                              │
+                                                    enqueue  │  poll
+                                                              ▼
+                                                       ┌──────────┐
+                                                       │  redis   │◀──── auto-expire job records
+                                                       └────┬─────┘
+                                                            │
+                                       ┌────────────────────┼───────────────────────┐
+                                       ▼                     ▼                       ▼
+                            ┌────────────────┐    ┌──────────────────┐     ┌───────────────┐
+                            │     worker     │    │  video-worker    │     │    cleaner    │
+                            │  rembg / ONNX  │    │  RVM + FFmpeg    │     │  disk sweep   │
+                            └────────────────┘    └──────────────────┘     └───────────────┘
+                                       └──────── shared job-data volume ───────┘
 ```
 
-- **Backend:** FastAPI, `rembg` (ONNX Runtime), Pillow, `pydantic-settings`. Lifespan hook warms the chosen model at startup so the first request doesn't stall.
-- **Frontend:** Next.js 15 App Router, React 19, Tailwind v4, TypeScript strict. Built as a standalone Node output for a small production image.
-- **Deployment:** Docker Compose. The `api` service exposes port 8000; the `web` service exposes 3000 and proxies `/api/*` to `api` internally, so from the browser's perspective everything is same-origin — CORS only matters if you hit the API directly from another host.
-- **Model cache:** Named Docker volume (`model-cache`) mounted at `~/.u2net` so model downloads survive rebuilds.
-- **Security defaults:** Mandatory shared API key enforced by a FastAPI dependency (server refuses to start if it's unset); upload size capped at 25 MB and enforced before decoding; only common raster types accepted. Ports bind to `0.0.0.0` by default (LAN-reachable); the API key stays mandatory so exposure ≠ leak.
+Six services:
+
+| Service | What it does |
+|---|---|
+| `web` | Next.js. Serves the UI and proxies `/api/*` to `api`. |
+| `api` | FastAPI. Handles uploads, enqueues jobs, serves results. |
+| `worker` | Image job runner. Pulls from the `default` queue, runs `rembg`. |
+| `video-worker` | Video job runner. Pulls from the `video` queue, runs RVM through FFmpeg. |
+| `redis` | Backs the job queue and job metadata. Not exposed on any host port. |
+| `cleaner` | Sweeps expired job folders off disk on a loop. |
+
+- **Backend:** FastAPI, `rembg`, RVM (ONNX Runtime), FFmpeg, RQ, Pillow, `pydantic-settings`.
+- **Frontend:** Next.js 15 App Router, React 19, Tailwind v4, TypeScript strict. Standalone Node output for a small production image.
+- **Deployment:** Docker Compose. `web` proxies `/api/*` to `api` internally, so from the browser's point of view everything is same-origin.
+- **Persistence:** Named volumes for the model cache, Redis data, and job files. Job files auto-expire after `SELFBG_RESULT_TTL_SECONDS` (24 h default).
+- **Security:** API key is mandatory (server won't start without one). Uploads capped at 25 MB for images / 200 MB for videos, and the size check happens before decoding. Only common raster and video types get through the door. Ports bind to `0.0.0.0` by default — the key stays mandatory, so exposure ≠ leak.
 
 ---
 
@@ -180,6 +244,14 @@ export SELFBG_API_KEY=$(openssl rand -hex 32)
 uvicorn app.main:app --reload
 ```
 
+The workers and cleaner are individual scripts. Run whichever ones you need:
+
+```bash
+python -m app.workers.image      # image job runner
+python -m app.workers.video      # video job runner (needs ffmpeg installed)
+python -m app.workers.cleaner    # data folder sweeper
+```
+
 Frontend without Docker:
 
 ```bash
@@ -194,4 +266,4 @@ SELFBG_API_ORIGIN=http://localhost:8000 npm run dev
 
 MIT (c) 2026 Farhad Ahmed. See [LICENSE](./LICENSE).
 
-Model weights are downloaded on demand by `rembg` and are licensed by their respective authors — check `rembg`'s documentation for the specific model you use.
+Model weights are downloaded on demand and licensed by their respective authors — see [rembg](https://github.com/danielgatis/rembg) and [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting).
