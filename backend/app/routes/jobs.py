@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from stream_zip import NO_COMPRESSION_64, stream_zip
 
 from ..auth import require_api_key
-from ..jobs import (
+from ..job_store import (
     enqueue_job,
     get_batch,
     get_job,

@@ -7,7 +7,7 @@ each folder under /data/jobs, if its Redis record is gone (or the folder
 is much older than the TTL and has no record at all), the folder is
 deleted.
 
-Run as `python -m app.cleaner`.
+Run as `python -m app.workers.cleaner`.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from rq.exceptions import NoSuchJobError
 from rq.job import Job as RqJob
 
-from .config import get_settings
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 

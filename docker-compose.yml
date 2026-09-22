@@ -42,8 +42,8 @@ services:
     ports:
       - "${WEB_BIND:-0.0.0.0:3000}:3000"
 
-  # Runs the same image as `api` but with `python -m app.worker` as the
-  # entrypoint, so it warms the model and then blocks on the RQ queue.
+  # Runs the same image as `api` but with `python -m app.workers.image` as
+  # the entrypoint, so it warms the model and then blocks on the RQ queue.
   # Scale horizontally with `docker compose up -d --scale worker=N` once
   # the box has the RAM for it (each worker loads its own model copy).
   worker:
@@ -61,7 +61,7 @@ services:
       SELFBG_MODEL: ${SELFBG_MODEL:-birefnet-general}
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
-    command: ["python", "-m", "app.worker"]
+    command: ["python", "-m", "app.workers.image"]
     volumes:
       - model-cache:/home/selfbg/.u2net
       - job-data:/data/jobs
@@ -107,7 +107,7 @@ services:
       SELFBG_REDIS_URL: ${SELFBG_REDIS_URL:-redis://redis:6379/0}
       SELFBG_RESULT_TTL_SECONDS: ${SELFBG_RESULT_TTL_SECONDS:-86400}
       SELFBG_CLEANUP_INTERVAL_SECONDS: ${SELFBG_CLEANUP_INTERVAL_SECONDS:-3600}
-    command: ["python", "-m", "app.cleaner"]
+    command: ["python", "-m", "app.workers.cleaner"]
     volumes:
       - job-data:/data/jobs
 

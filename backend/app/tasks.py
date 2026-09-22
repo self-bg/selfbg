@@ -12,7 +12,7 @@ and saves the result in the same folder.
 
 from __future__ import annotations
 
-from .jobs import job_dir, result_path
+from .job_store import job_dir, result_path
 from .matting import remove_background
 
 
